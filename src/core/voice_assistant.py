@@ -41,8 +41,11 @@ class VoiceAssistant:
         self.stt_engine = (stt_engine or config.stt_engine).lower()
         self.base_url = base_url or config.openai_base_url
         self.system_prompt = system_prompt or (
-            "Você é um assistente de voz prestativo, inteligente e conciso. "
-            "Responda sempre em português do Brasil de forma breve e natural para conversa falada."
+            "Você é um assistente de voz prestativo, inteligente, caloroso e conciso. "
+            "Responda sempre em português do Brasil com fala fluida, natural e amigável. "
+            "Nunca use formatação markdown, marcadores de tópicos (bullet points), asteriscos ou tabelas, "
+            "pois sua resposta será sintetizada em voz alta. "
+            "Use pontuação expressiva com vírgulas e pausas naturais de conversação."
         )
         self.history: List[Dict[str, str]] = [
             {"role": "system", "content": self.system_prompt}

@@ -57,6 +57,7 @@ function initAssistant() {
   const historyCounter = document.getElementById('history-counter');
   const btnClearChat = document.getElementById('btn-clear-chat');
   const btnBrowserRecord = document.getElementById('btn-browser-record');
+  const voiceEngineSelect = document.getElementById('assistant-voice-engine');
 
   let interactionCount = 0;
   let isRecording = false;
@@ -140,6 +141,47 @@ function initAssistant() {
     };
   }
 
+  // Speak assistant response using chosen voice engine
+  function speakResponse(text) {
+    const selectedMode = voiceEngineSelect ? voiceEngineSelect.value : 'browser';
+
+    if (selectedMode === 'browser' && 'speechSynthesis' in window) {
+      if (currentAudio) {
+        try { currentAudio.pause(); currentAudio.currentTime = 0; } catch (e) {}
+        currentAudio = null;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1.05;
+
+      const ptVoices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('pt'));
+      const naturalVoice = ptVoices.find(v =>
+        v.name.includes('Natural') ||
+        v.name.includes('Francisca') ||
+        v.name.includes('Antonio') ||
+        v.name.includes('Google') ||
+        v.name.includes('Thalita')
+      ) || ptVoices[0];
+
+      if (naturalVoice) utterance.voice = naturalVoice;
+
+      setAssistantStatus('speaking', 'Assistente falando...', `Voz Neural: ${naturalVoice ? naturalVoice.name : 'Navegador pt-BR'}`);
+      utterance.onend = () => {
+        setAssistantStatus('idle', 'Clique no microfone para falar', 'O assistente está pronto para ouvir sua próxima fala.');
+      };
+      utterance.onerror = () => {
+        setAssistantStatus('idle', 'Clique no microfone para falar', 'O assistente está pronto para ouvir sua próxima fala.');
+      };
+
+      window.speechSynthesis.speak(utterance);
+    } else {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      const synthUrl = `/api/synthesize?text=${encodeURIComponent(text)}`;
+      playSpeechAudio(synthUrl);
+    }
+  }
+
   // Trigger server hardware mic turn
   let isTurnRunning = false;
   async function runServerVoiceTurn() {
@@ -161,8 +203,7 @@ function initAssistant() {
       }
       if (data.assistant_text) {
         addBubble('assistant', data.assistant_text);
-        const synthUrl = `/api/synthesize?text=${encodeURIComponent(data.assistant_text)}`;
-        playSpeechAudio(synthUrl);
+        speakResponse(data.assistant_text);
       } else {
         setAssistantStatus('idle', 'Nenhuma fala detectada', 'Tente falar mais próximo ao microfone.');
       }
@@ -233,8 +274,7 @@ function initAssistant() {
             addBubble('assistant', reply);
 
             // 3. Synthesize & Speak
-            const synthUrl = `/api/synthesize?text=${encodeURIComponent(reply)}`;
-            playSpeechAudio(synthUrl);
+            speakResponse(reply);
 
           } catch (e) {
             setAssistantStatus('idle', 'Erro no processamento', e.message);
@@ -292,9 +332,7 @@ function initAssistant() {
       const data = await res.json();
       const reply = data.reply || 'Desculpe, ocorreu um erro.';
       addBubble('assistant', reply);
-
-      const synthUrl = `/api/synthesize?text=${encodeURIComponent(reply)}`;
-      playSpeechAudio(synthUrl);
+      speakResponse(reply);
     } catch (err) {
       setAssistantStatus('idle', 'Erro no chat', err.message);
     }
@@ -338,6 +376,42 @@ function initTTS() {
     }
 
     const engine = engineSelect.value;
+
+    if (engine === 'browser') {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'pt-BR';
+        utterance.rate = 1.05;
+
+        const ptVoices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('pt'));
+        const naturalVoice = ptVoices.find(v =>
+          v.name.includes('Natural') ||
+          v.name.includes('Francisca') ||
+          v.name.includes('Antonio') ||
+          v.name.includes('Google') ||
+          v.name.includes('Thalita')
+        ) || ptVoices[0];
+
+        if (naturalVoice) utterance.voice = naturalVoice;
+
+        playerStatus.textContent = `Voz: ${naturalVoice ? naturalVoice.name : 'Navegador'}`;
+        visualizer.classList.add('animating');
+
+        utterance.onend = () => {
+          visualizer.classList.remove('animating');
+          playerStatus.textContent = 'Concluído';
+        };
+        utterance.onerror = () => {
+          visualizer.classList.remove('animating');
+          playerStatus.textContent = 'Erro';
+        };
+
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+    }
+
     btnSynthesize.disabled = true;
     btnSynthesize.innerHTML = '<span class="btn-icon">⏳</span><span>Sintetizando...</span>';
     playerStatus.textContent = 'Gerando áudio...';

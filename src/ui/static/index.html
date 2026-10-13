@@ -103,6 +103,15 @@
               <span>Limpar Conversa</span>
             </button>
           </div>
+
+          <!-- Voice Engine Selector -->
+          <div class="voice-engine-card-bar">
+            <label for="assistant-voice-engine">🎙️ Voz de Saída:</label>
+            <select id="assistant-voice-engine" class="compact-select">
+              <option value="browser" selected>✨ Voz Neural Natural (Edge / Chrome / Windows)</option>
+              <option value="server">🤖 gTTS (Google Tradutor - Básico)</option>
+            </select>
+          </div>
         </div>
 
         <!-- Chat Feed Card -->
@@ -156,7 +165,8 @@
             <div class="form-group">
               <label for="tts-engine-select">Motor de Voz (TTS Engine):</label>
               <select id="tts-engine-select">
-                <option value="gtts" selected>Google gTTS (Recomendado - Grátis, Nativo pt-BR)</option>
+                <option value="browser" selected>✨ Voz Neural do Navegador (Francisca / Antonio - Super Natural)</option>
+                <option value="gtts">Google gTTS (Gratuito, Básico pt-BR)</option>
                 <option value="openai">OpenRouter / OpenAI (hexgrad/kokoro-82m)</option>
               </select>
             </div>
