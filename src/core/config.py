@@ -44,7 +44,8 @@ class AppConfig:
     openai_whisper_model: str = field(default_factory=lambda: os.getenv("OPENAI_WHISPER_MODEL", "whisper-1"))
 
     # Local Whisper settings
-    local_whisper_model: str = field(default_factory=lambda: os.getenv("LOCAL_WHISPER_MODEL", "tiny.en"))
+    local_whisper_model: str = field(default_factory=lambda: os.getenv("LOCAL_WHISPER_MODEL", "base"))
+    whisper_language: str = field(default_factory=lambda: os.getenv("WHISPER_LANGUAGE", "pt"))
 
     # Engine selections
     stt_engine: str = field(default_factory=lambda: os.getenv("STT_ENGINE", "openai").lower())
@@ -68,6 +69,10 @@ class AppConfig:
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         if self.openai_base_url is not None:
             self.openai_base_url = self.openai_base_url.strip() or None
+
+        # Auto-correct English-only .en models if Portuguese is target
+        if self.local_whisper_model.endswith(".en") and self.whisper_language.lower() in ("pt", "pt-br", "pt_br"):
+            self.local_whisper_model = self.local_whisper_model[:-3]
 
     @property
     def has_openai_key(self) -> bool:

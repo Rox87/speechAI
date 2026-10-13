@@ -51,16 +51,17 @@ def transcribe_with_openai(
     """
     client = get_openai_client()
     model_name = model or config.openai_whisper_model
+    kwargs: Dict[str, Any] = {"model": model_name}
+    target_lang = language or config.whisper_language
+    if target_lang:
+        kwargs["language"] = "pt" if target_lang.lower() in ("pt", "pt-br", "pt_br") else target_lang
 
-    file_payload: Any
     if isinstance(audio_source, (str, Path)):
         path = Path(audio_source)
         if not path.exists():
             raise FileNotFoundError(f"Audio file not found: {path}")
         with open(path, "rb") as f:
-            kwargs = {"model": model_name, "file": f}
-            if language:
-                kwargs["language"] = language
+            kwargs["file"] = f
             response = client.audio.transcriptions.create(**kwargs)
             return response.text.strip()
     elif isinstance(audio_source, io.BytesIO):
@@ -71,21 +72,20 @@ def transcribe_with_openai(
     else:
         raise TypeError(f"Unsupported audio source type: {type(audio_source)}")
 
-    kwargs = {"model": model_name, "file": file_payload}
-    if language:
-        kwargs["language"] = language
-
+    kwargs["file"] = file_payload
     response = client.audio.transcriptions.create(**kwargs)
     return response.text.strip()
 
 
 def transcribe_with_local_whisper(
     audio_source: Union[str, Path, io.BytesIO],
+    language: Optional[str] = None,
 ) -> Generator[str, None, None]:
     """Transcribe audio using local faster-whisper, yielding segment texts.
 
     Args:
         audio_source: File path or BytesIO buffer.
+        language: Language code for transcription. Defaults to config.whisper_language.
 
     Yields:
         str: Segment text transcription.
@@ -99,7 +99,12 @@ def transcribe_with_local_whisper(
     else:
         input_data = str(audio_source)
 
-    segments, _ = model.transcribe(input_data)
+    target_lang = language or config.whisper_language
+    kwargs: Dict[str, Any] = {}
+    if target_lang and not config.local_whisper_model.endswith(".en"):
+        kwargs["language"] = "pt" if target_lang.lower() in ("pt", "pt-br", "pt_br") else target_lang
+
+    segments, _ = model.transcribe(input_data, **kwargs)
     for segment in segments:
         yield segment.text
 
@@ -107,12 +112,14 @@ def transcribe_with_local_whisper(
 def transcribe_audio(
     audio_source: Union[str, Path, io.BytesIO, bytes],
     engine: Optional[str] = None,
+    language: Optional[str] = None,
 ) -> str:
     """High-level unified audio transcription function.
 
     Args:
         audio_source: Audio file path or BytesIO buffer.
         engine: 'openai' or 'local'. Defaults to config.stt_engine.
+        language: Optional language code. Defaults to config.whisper_language.
 
     Returns:
         str: Complete transcribed text.
@@ -121,13 +128,13 @@ def transcribe_audio(
 
     if selected_engine == "local":
         try:
-            segments = list(transcribe_with_local_whisper(audio_source))
+            segments = list(transcribe_with_local_whisper(audio_source, language=language))
             return " ".join(s.strip() for s in segments if s.strip())
         except ImportError as e:
             logger.warning(f"Local Whisper unavailable ({e}), falling back to OpenAI Whisper API.")
 
     # Default to OpenAI
-    return transcribe_with_openai(audio_source)
+    return transcribe_with_openai(audio_source, language=language)
 
 
 # Backwards compatibility wrappers

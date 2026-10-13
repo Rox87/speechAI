@@ -117,17 +117,35 @@ function initAssistant() {
   }
 
   // Play audio in-browser helper
+  let currentAudio = null;
   function playSpeechAudio(audioUrl) {
+    if (currentAudio) {
+      try {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+      } catch (e) {}
+    }
     const audio = new Audio(audioUrl);
+    currentAudio = audio;
     setAssistantStatus('speaking', 'Assistente falando...', 'Reproduzindo resposta gerada pelo modelo.');
-    audio.play().catch(e => console.warn('Autoplay bloqueado:', e));
+    audio.play().catch(e => {
+      console.warn('Autoplay bloqueado:', e);
+      setAssistantStatus('idle', 'Clique no microfone para falar', 'O assistente está pronto para ouvir sua próxima fala.');
+    });
     audio.onended = () => {
+      if (currentAudio === audio) {
+        currentAudio = null;
+      }
       setAssistantStatus('idle', 'Clique no microfone para falar', 'O assistente está pronto para ouvir sua próxima fala.');
     };
   }
 
   // Trigger server hardware mic turn
+  let isTurnRunning = false;
   async function runServerVoiceTurn() {
+    if (isTurnRunning || isRecording) return;
+    isTurnRunning = true;
+    micOrb.style.pointerEvents = 'none';
     setAssistantStatus('listening', 'Gravando pelo microfone do computador (5s)...', 'Fale agora com o microfone...');
     try {
       const res = await fetch('/api/voice-turn', { method: 'POST' });
@@ -143,13 +161,16 @@ function initAssistant() {
       }
       if (data.assistant_text) {
         addBubble('assistant', data.assistant_text);
-        const synthUrl = `/api/synthesize?text=${encodeURIComponent(data.assistant_text)}&engine=gtts`;
+        const synthUrl = `/api/synthesize?text=${encodeURIComponent(data.assistant_text)}`;
         playSpeechAudio(synthUrl);
       } else {
         setAssistantStatus('idle', 'Nenhuma fala detectada', 'Tente falar mais próximo ao microfone.');
       }
     } catch (err) {
       setAssistantStatus('idle', 'Erro na conexão', err.message);
+    } finally {
+      isTurnRunning = false;
+      micOrb.style.pointerEvents = 'auto';
     }
   }
 
@@ -212,7 +233,7 @@ function initAssistant() {
             addBubble('assistant', reply);
 
             // 3. Synthesize & Speak
-            const synthUrl = `/api/synthesize?text=${encodeURIComponent(reply)}&engine=gtts`;
+            const synthUrl = `/api/synthesize?text=${encodeURIComponent(reply)}`;
             playSpeechAudio(synthUrl);
 
           } catch (e) {
@@ -272,7 +293,7 @@ function initAssistant() {
       const reply = data.reply || 'Desculpe, ocorreu um erro.';
       addBubble('assistant', reply);
 
-      const synthUrl = `/api/synthesize?text=${encodeURIComponent(reply)}&engine=gtts`;
+      const synthUrl = `/api/synthesize?text=${encodeURIComponent(reply)}`;
       playSpeechAudio(synthUrl);
     } catch (err) {
       setAssistantStatus('idle', 'Erro no chat', err.message);

@@ -293,9 +293,14 @@ class SpeechAIRequestHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
 
     def handle_post_voice_turn(self) -> None:
-        """Execute one complete live turn from local hardware microphone."""
+        """Execute one complete live turn from local hardware microphone.
+
+        In Web UI mode, we suppress server-side speaker playback (speak=False)
+        because the browser plays the response audio via HTML5 Audio,
+        preventing double audio echo/playback.
+        """
         try:
-            user_text, assistant_text, should_continue = assistant.listen_and_respond_once()
+            user_text, assistant_text, should_continue = assistant.listen_and_respond_once(speak=False)
             self._set_headers(200)
             self.wfile.write(json.dumps({
                 "user_text": user_text,

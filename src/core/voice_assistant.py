@@ -62,11 +62,12 @@ class VoiceAssistant:
         words = normalized.split()
         return normalized in EXIT_COMMANDS or (len(words) <= 2 and words[0] in EXIT_COMMANDS)
 
-    def chat_and_speak(self, prompt: str) -> str:
+    def chat_and_speak(self, prompt: str, speak: bool = True) -> str:
         """Query LLM with conversational context and speak the generated answer.
 
         Args:
             prompt: User utterance or prompt string.
+            speak: Whether to play the audio locally via player (default: True).
 
         Returns:
             str: Assistant response text.
@@ -77,7 +78,8 @@ class VoiceAssistant:
         if not config.has_openai_key:
             msg = "Chave da OpenAI não configurada no arquivo .env."
             logger.error(msg)
-            self._speak(msg)
+            if speak:
+                self._speak(msg)
             return msg
 
         try:
@@ -95,13 +97,15 @@ class VoiceAssistant:
             self.history.append({"role": "assistant", "content": assistant_text})
             logger.info(f"Assistant: {assistant_text}")
 
-            self._speak(assistant_text)
+            if speak:
+                self._speak(assistant_text)
             return assistant_text
 
         except Exception as e:
             logger.error(f"Error in chat_and_speak: {e}")
             err_msg = f"Desculpe, ocorreu um erro: {e}"
-            self._speak(err_msg)
+            if speak:
+                self._speak(err_msg)
             return err_msg
 
     def _speak(self, text: str) -> bool:
@@ -117,8 +121,11 @@ class VoiceAssistant:
             return player.play(result_file, block=True)
         return False
 
-    def listen_and_respond_once(self) -> Tuple[str, str, bool]:
+    def listen_and_respond_once(self, speak: bool = True) -> Tuple[str, str, bool]:
         """Perform one complete voice turn: record, transcribe, reply.
+
+        Args:
+            speak: Whether to play the audio response locally via player (default: True).
 
         Returns:
             Tuple[str, str, bool]: (user_text, assistant_text, should_continue)
@@ -137,13 +144,14 @@ class VoiceAssistant:
 
             # 3. Check for exit
             if self.is_exit_command(user_text):
-                farewell = "Goodbye! At\u00e9 logo!"
+                farewell = "Goodbye! Até logo!"
                 logger.info(farewell)
-                self._speak(farewell)
+                if speak:
+                    self._speak(farewell)
                 return user_text, farewell, False
 
             # 4. Generate response and speak
-            assistant_reply = self.chat_and_speak(user_text)
+            assistant_reply = self.chat_and_speak(user_text, speak=speak)
             return user_text, assistant_reply, True
 
         except ValueError as e:
