@@ -1,152 +1,216 @@
-import sounddevice as sd
-from openai import OpenAI
-from openai import OpenAI
-from core.audio.audio_transcriber import local_transcribe_audio
-from core.tts.synthesizer import synthesize_with_openai
-from dotenv import load_dotenv
-import pygame
-import os
+"""Core Voice Assistant orchestrator.
 
-# Load environment variables from .env file
-load_dotenv()
+Integrates microphone capture, speech-to-text (STT), OpenAI LLM conversational reasoning,
+and text-to-speech (TTS) playback in a continuous interactive dialogue loop.
+"""
 
-# Initialize pygame for audio playback
-pygame.mixer.init()
+from __future__ import annotations
 
-# Initialize OpenAI client with API key from environment
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+import sys
+from typing import Optional, List, Dict, Tuple
 
-# Chat history
-history = [
-    {"role": "system", "content": "You are a helpful voice assistant."}
-]
+from src.core.logger import logger
+from src.core.config import config
+from src.core.client import get_openai_client
+from src.core.audio.recorder import record_audio_to_bytes, check_audio_input_device
+from src.core.audio.audio_transcriber import transcribe_audio
+from src.core.audio.player import player
+from src.core.tts.synthesizer import synthesize_to_bytes, synthesize_text
+from src.core.utils.temp_file_cleaner import clean_temp_dir
 
-def chat_and_speak(prompt: str):
-    """Get ChatGPT response and convert it to speech"""
-    try:
-        # Add user message to history
-        history.append({"role": "user", "content": prompt})
-        
-        # Get response from ChatGPT
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=history
+
+EXIT_COMMANDS = {
+    "exit", "quit", "bye", "goodbye", "stop",
+    "sair", "tchau", "encerrar", "parar", "desligar"
+}
+
+
+class VoiceAssistant:
+    """Conversational voice assistant managing STT, reasoning, and TTS."""
+
+    def __init__(
+        self,
+        system_prompt: Optional[str] = None,
+        chat_model: Optional[str] = None,
+        tts_engine: Optional[str] = None,
+        stt_engine: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ):
+        self.chat_model = chat_model or config.chat_model
+        self.tts_engine = (tts_engine or config.tts_engine).lower()
+        self.stt_engine = (stt_engine or config.stt_engine).lower()
+        self.base_url = base_url or config.openai_base_url
+        self.system_prompt = system_prompt or (
+            "Você é um assistente de voz prestativo, inteligente e conciso. "
+            "Responda sempre em português do Brasil de forma breve e natural para conversa falada."
         )
-        response_text = response.choices[0].message.content
-        
-        # Add assistant response to history
-        history.append({"role": "assistant", "content": response_text})
-        
-        # Generate speech from response
-        output_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "temp", "response.mp3")
-        os.makedirs(os.path.dirname(output_file), mode=0o755, exist_ok=True)
-        if synthesize_with_openai(response_text, output_file):
-            try:
-                # Set file permissions for response.mp3
-                os.chmod(output_file, 0o755)
-                # Play the audio
-                pygame.mixer.music.load(output_file)
-                pygame.mixer.music.play()
-                while pygame.mixer.music.get_busy():
-                    pygame.time.Clock().tick(10)
-                # Unload and stop the music to release the file
-                pygame.mixer.music.stop()
-                pygame.mixer.music.unload()
-                return response_text
-            except Exception as audio_error:
-                print(f"Error playing audio: {str(audio_error)}")
-                return response_text
-            finally:
-                # Ensure pygame mixer is properly reset
-                pygame.mixer.quit()
-                pygame.mixer.init()
-    except Exception as e:
-        print(f"Error in chat_and_speak: {str(e)}")
-        return str(e)
-import io
-import wave
+        self.history: List[Dict[str, str]] = [
+            {"role": "system", "content": self.system_prompt}
+        ]
 
-client = OpenAI()
+    def reset_history(self) -> None:
+        """Reset conversation memory to initial system prompt."""
+        self.history = [{"role": "system", "content": self.system_prompt}]
+        logger.info("Conversation history cleared.")
 
-def audio_stream_generator(duration=5, samplerate=44100, channels=1):
-    while True:
-        print("Recording...")
-        # Record the audio
-        audio_data = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=channels, dtype='int16')
-        sd.wait()  # Wait until recording is finished
-        print("Recording finished.")
+    def is_exit_command(self, text: str) -> bool:
+        """Check if transcribed user text represents an exit/termination command."""
+        normalized = text.strip().lower().rstrip(".,!?")
+        if not normalized:
+            return False
+        # Exact match or short phrase starting with exit command
+        words = normalized.split()
+        return normalized in EXIT_COMMANDS or (len(words) <= 2 and words[0] in EXIT_COMMANDS)
 
-        # Save the audio to an in-memory BytesIO object
-        audio_bytes = io.BytesIO()
-        with wave.open(audio_bytes, 'wb') as wf:
-            wf.setnchannels(channels)
-            wf.setsampwidth(2)  # 2 bytes for 'int16'
-            wf.setframerate(samplerate)
-            wf.writeframes(audio_data.tobytes())
+    def chat_and_speak(self, prompt: str) -> str:
+        """Query LLM with conversational context and speak the generated answer.
 
-        # Reset the pointer of BytesIO object to the start
-        audio_bytes.seek(0)
-        
-        # Yield the audio stream
-        yield audio_bytes.getvalue().decode('latin-1')
+        Args:
+            prompt: User utterance or prompt string.
 
-def record_audio_to_bytes(duration=5, samplerate=44100, channels=1):
-    """Record audio from the microphone and save it to a BytesIO object."""
-    print("Recording...")
-    
-    # Record audio
-    audio_data = sd.rec(int(duration * samplerate), samplerate=samplerate, channels=channels, dtype='int16')
-    sd.wait()  # Wait until recording is finished
-    print("Recording finished.")
-    
-    # Save the audio to an in-memory BytesIO object
-    audio_bytes = io.BytesIO()
-    with wave.open(audio_bytes, 'wb') as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(2)  # 2 bytes for 'int16'
-        wf.setframerate(samplerate)
-        wf.writeframes(audio_data.tobytes())
-    
-    # Reset the pointer of BytesIO object to the start
-    audio_bytes.seek(0)
-    
-    return audio_bytes
+        Returns:
+            str: Assistant response text.
+        """
+        if not prompt or not prompt.strip():
+            return ""
 
+        if not config.has_openai_key:
+            msg = "Chave da OpenAI não configurada no arquivo .env."
+            logger.error(msg)
+            self._speak(msg)
+            return msg
 
-
-def listen_and_respond():
-    print("Voice assistant started. Say 'bye' to quit.")
-    
-    # Ensure temp directory exists
-    import os
-    os.makedirs("temp", exist_ok=True)
-    
-    while True:
         try:
-            # Record audio from microphone
-            # Transcribe the audio
-            user_input = ""
-            for segment in local_transcribe_audio(record_audio_to_bytes()):
-                user_input += segment
-            
-            print(f"You said: {user_input}")
-            
-            # Check for exit command
-            if user_input.lower().strip().__contains__("bye") and len(user_input.lower().strip()) < 5:
-                print("Exiting voice assistant...")
-                break
-                
-            # Get ChatGPT response and speak it
-            response = chat_and_speak(user_input)
-            print(f"Assistant: {response}")
-                
-        except KeyboardInterrupt:
-            print("\nExiting voice assistant...")
-            break
+            client = get_openai_client(base_url=self.base_url)
+            self.history.append({"role": "user", "content": prompt})
+
+            logger.info(f"Querying OpenAI ({self.chat_model})...")
+            response = client.chat.completions.create(
+                model=self.chat_model,
+                messages=self.history,
+                temperature=0.7,
+            )
+
+            assistant_text = response.choices[0].message.content or ""
+            self.history.append({"role": "assistant", "content": assistant_text})
+            logger.info(f"Assistant: {assistant_text}")
+
+            self._speak(assistant_text)
+            return assistant_text
+
         except Exception as e:
-            print(f"Error: {str(e)}")
-            
+            logger.error(f"Error in chat_and_speak: {e}")
+            err_msg = f"Desculpe, ocorreu um erro: {e}"
+            self._speak(err_msg)
+            return err_msg
+
+    def _speak(self, text: str) -> bool:
+        """Internal helper to synthesize and play text."""
+        audio_buffer = synthesize_to_bytes(text, engine=self.tts_engine)
+        if audio_buffer:
+            return player.play(audio_buffer, block=True)
+
+        # Fallback to file-based synthesis
+        temp_file = config.temp_dir / "assistant_response.mp3"
+        result_file = synthesize_text(text, output_file=temp_file, engine=self.tts_engine)
+        if result_file:
+            return player.play(result_file, block=True)
+        return False
+
+    def listen_and_respond_once(self) -> Tuple[str, str, bool]:
+        """Perform one complete voice turn: record, transcribe, reply.
+
+        Returns:
+            Tuple[str, str, bool]: (user_text, assistant_text, should_continue)
+        """
+        try:
+            # 1. Record audio
+            audio_buffer = record_audio_to_bytes()
+
+            # 2. Transcribe audio to text
+            user_text = transcribe_audio(audio_buffer, engine=self.stt_engine)
+            if not user_text or not user_text.strip():
+                logger.info("No speech detected.")
+                return "", "", True
+
+            logger.info(f"You said: {user_text}")
+
+            # 3. Check for exit
+            if self.is_exit_command(user_text):
+                farewell = "Goodbye! At\u00e9 logo!"
+                logger.info(farewell)
+                self._speak(farewell)
+                return user_text, farewell, False
+
+            # 4. Generate response and speak
+            assistant_reply = self.chat_and_speak(user_text)
+            return user_text, assistant_reply, True
+
+        except ValueError as e:
+            if "OPENAI_API_KEY" in str(e):
+                logger.error(f"Configuração necessária: {e}")
+                return "", str(e), False
+            logger.error(f"Erro de valor: {e}")
+            return "", str(e), True
+        except Exception as e:
+            logger.error(f"Error during voice interaction turn: {e}")
+            return "", str(e), True
+
+    def run_assistant_loop(self) -> None:
+        """Run continuous voice assistant loop until user exits or interrupts."""
+        # Check if OpenAI key is configured
+        if not config.has_openai_key and self.stt_engine == "openai":
+            logger.warning("=" * 60)
+            logger.warning("[AVISO] Chave OPENAI_API_KEY não configurada no arquivo .env!")
+            logger.warning("O assistente interativo requer a chave da OpenAI para STT e ChatGPT.")
+            logger.warning("Crie ou edite seu arquivo .env com base no .env.example:")
+            logger.info("    cp .env.example .env")
+            logger.info("\nVocê pode testar outras funcionalidades sem chave agora mesmo:")
+            logger.info("  1. Diagnóstico do sistema:      python src/main.py check")
+            logger.info("  2. Síntese de voz com gTTS:     python src/main.py speak \"Olá!\" --engine gtts")
+            logger.info("  3. Ver todas as opções:         python src/main.py --help")
+            logger.warning("=" * 60)
+            return
+
+        logger.info("=" * 60)
+        logger.info("SpeechAI Voice Assistant is active!")
+        logger.info(f"Chat Model: {self.chat_model} | TTS: {self.tts_engine} | STT: {self.stt_engine}")
+        logger.info("Speak into your microphone. Say 'sair' or 'exit' to quit.")
+        logger.info("=" * 60)
+
+        # Clean any leftover temp files on startup
+        clean_temp_dir()
+
+        while True:
+            try:
+                _, _, should_continue = self.listen_and_respond_once()
+                if not should_continue:
+                    break
+            except KeyboardInterrupt:
+                logger.info("\nUser interrupted. Exiting voice assistant...")
+                break
+            except Exception as e:
+                logger.error(f"Loop error: {e}")
+
+        # Clean temporary files on exit
+        clean_temp_dir()
+        logger.info("Voice assistant stopped.")
+
+
+# Default instance
+assistant = VoiceAssistant()
+
+
+# Backwards compatible functions
+def chat_and_speak(prompt: str) -> str:
+    """Backwards compatible chat_and_speak function."""
+    return assistant.chat_and_speak(prompt)
+
+
+def listen_and_respond() -> None:
+    """Backwards compatible voice assistant loop."""
+    assistant.run_assistant_loop()
+
 
 if __name__ == "__main__":
-    clean_folder("temp")
     listen_and_respond()

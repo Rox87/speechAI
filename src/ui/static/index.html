@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpeechAI Studio - Voice Assistant & Audio Processing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Header -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" x2="12" y1="19" y2="22"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">SpeechAI Studio</h1>
+        <p class="brand-subtitle">Assistente de Voz • Whisper STT • Multi-TTS</p>
+      </div>
+    </div>
+
+    <div class="header-badges">
+      <div class="badge status-badge" id="badge-connection">
+        <span class="status-dot pulsing"></span>
+        <span id="badge-connection-text">OpenRouter Conectado</span>
+      </div>
+      <div class="badge model-badge" id="badge-models">
+        <span class="icon">⚡</span>
+        <span id="badge-model-text">openai/whisper-1</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-container">
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs" role="tablist">
+      <button class="tab-btn active" id="tab-btn-assistant" data-tab="tab-assistant" role="tab">
+        <span class="tab-icon">🎙️</span>
+        <span>Assistente de Voz</span>
+      </button>
+      <button class="tab-btn" id="tab-btn-tts" data-tab="tab-tts" role="tab">
+        <span class="tab-icon">🔊</span>
+        <span>Síntese de Voz (TTS)</span>
+      </button>
+      <button class="tab-btn" id="tab-btn-stt" data-tab="tab-stt" role="tab">
+        <span class="tab-icon">📝</span>
+        <span>Transcrição (STT)</span>
+      </button>
+      <button class="tab-btn" id="tab-btn-settings" data-tab="tab-settings" role="tab">
+        <span class="tab-icon">⚙️</span>
+        <span>Configurações & Status</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: Voice Assistant -->
+    <section class="tab-content active" id="tab-assistant" role="tabpanel">
+      <div class="assistant-grid">
+        <!-- Control Card -->
+        <div class="glass-card assistant-controls-card">
+          <div class="card-header">
+            <h2>Sessão Interativa</h2>
+            <span class="chip" id="chip-mode">Pronto</span>
+          </div>
+
+          <!-- Central Mic Orb -->
+          <div class="mic-orb-container">
+            <div class="sound-wave-ring ring-1" id="sound-ring-1"></div>
+            <div class="sound-wave-ring ring-2" id="sound-ring-2"></div>
+            <div class="sound-wave-ring ring-3" id="sound-ring-3"></div>
+            <button class="mic-orb-btn" id="btn-mic-toggle" title="Clique para falar com o assistente">
+              <svg class="mic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" x2="12" y1="19" y2="22"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="assistant-status-text">
+            <h3 id="assistant-status-title">Clique no microfone para falar</h3>
+            <p id="assistant-status-desc">O assistente irá gravar pelo microfone, transcrever com Whisper e responder em voz alta.</p>
+          </div>
+
+          <!-- Quick Action Controls -->
+          <div class="assistant-actions">
+            <button class="action-btn" id="btn-browser-record">
+              <span class="btn-icon">⏺️</span>
+              <span id="btn-browser-record-text">Gravar pelo Navegador</span>
+            </button>
+            <button class="action-btn secondary" id="btn-clear-chat">
+              <span class="btn-icon">🗑️</span>
+              <span>Limpar Conversa</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat Feed Card -->
+        <div class="glass-card chat-feed-card">
+          <div class="card-header">
+            <h2>Histórico do Diálogo</h2>
+            <span class="history-count" id="history-counter">0 interações</span>
+          </div>
+
+          <div class="chat-messages" id="chat-messages-container">
+            <div class="chat-empty-state" id="chat-empty-state">
+              <div class="empty-icon">💬</div>
+              <p>Nenhuma mensagem ainda.</p>
+              <span>Fale pelo microfone ou digite uma mensagem abaixo para começar.</span>
+            </div>
+          </div>
+
+          <!-- Text message fallback -->
+          <form class="chat-input-bar" id="chat-form">
+            <input type="text" id="chat-text-input" placeholder="Ou digite sua pergunta aqui..." autocomplete="off">
+            <button type="submit" id="btn-chat-send" class="btn-send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 2: TTS Studio -->
+    <section class="tab-content" id="tab-tts" role="tabpanel">
+      <div class="tts-grid">
+        <div class="glass-card tts-input-card">
+          <div class="card-header">
+            <h2>Texto para Síntese</h2>
+            <span class="char-counter" id="tts-char-counter">0 caracteres</span>
+          </div>
+
+          <textarea id="tts-text-input" placeholder="Digite o texto que você deseja transformar em fala natural..." rows="6">Olá! Bem-vindo ao SpeechAI. Agora você pode gerar áudios cristalinos e conversar com inteligência artificial.</textarea>
+
+          <div class="preset-chips">
+            <span class="chip-label">Exemplos rápidos:</span>
+            <button class="preset-btn" data-text="Missão cumprida! O Instituto de Atenção Cultural e Educação está em andamento.">Missão Educacional</button>
+            <button class="preset-btn" data-text="Olá! Este é um teste da síntese de voz em português com o SpeechAI.">Apresentação</button>
+            <button class="preset-btn" data-text="Configurações atualizadas com sucesso para a URL Base do OpenRouter.">Status OpenRouter</button>
+          </div>
+
+          <div class="tts-options-grid">
+            <div class="form-group">
+              <label for="tts-engine-select">Motor de Voz (TTS Engine):</label>
+              <select id="tts-engine-select">
+                <option value="gtts" selected>Google gTTS (Recomendado - Grátis, Nativo pt-BR)</option>
+                <option value="openai">OpenRouter / OpenAI (hexgrad/kokoro-82m)</option>
+              </select>
+            </div>
+          </div>
+
+          <button class="primary-btn btn-synthesize" id="btn-synthesize">
+            <span class="btn-icon">⚡</span>
+            <span>Sintetizar & Ouvir</span>
+          </button>
+        </div>
+
+        <div class="glass-card tts-player-card">
+          <div class="card-header">
+            <h2>Player de Reprodução</h2>
+            <span class="chip" id="tts-player-status">Aguardando</span>
+          </div>
+
+          <div class="player-visualizer">
+            <div class="visualizer-bars" id="tts-visualizer-bars">
+              <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+              <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+              <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+            </div>
+          </div>
+
+          <audio id="tts-audio-player" controls class="custom-audio-player"></audio>
+
+          <div class="player-actions">
+            <a id="btn-download-audio" class="action-btn secondary disabled" download="speechai_audio.mp3">
+              <span>📥 Baixar Áudio (.mp3)</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: STT Studio -->
+    <section class="tab-content" id="tab-stt" role="tabpanel">
+      <div class="stt-grid">
+        <div class="glass-card stt-upload-card">
+          <div class="card-header">
+            <h2>Gravar ou Enviar Áudio</h2>
+            <span class="chip">Whisper API</span>
+          </div>
+
+          <div class="upload-dropzone" id="stt-dropzone">
+            <div class="upload-icon">🎙️</div>
+            <h3>Arraste um arquivo de áudio (MP3 / WAV)</h3>
+            <p>ou clique para selecionar do computador</p>
+            <input type="file" id="stt-file-input" accept="audio/*" style="display: none;">
+          </div>
+
+          <div class="divider-text">OU GRAVE DIRETAMENTE</div>
+
+          <div class="stt-record-bar">
+            <button class="primary-btn" id="btn-stt-record">
+              <span class="btn-icon">⏺️</span>
+              <span id="btn-stt-record-text">Gravar do Microfone (5s)</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="glass-card stt-result-card">
+          <div class="card-header">
+            <h2>Texto Transcrito</h2>
+            <button class="action-btn small" id="btn-copy-transcript">📋 Copiar</button>
+          </div>
+
+          <div class="transcript-box" id="stt-transcript-output">
+            <p class="placeholder-text">O texto transcrito pelo modelo Whisper aparecerá aqui...</p>
+          </div>
+
+          <div class="stt-meta" id="stt-meta-info">
+            <span>Modelo: <strong>openai/whisper-1</strong></span>
+            <span id="stt-latency-tag">Latência: --</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Settings & Diagnostics -->
+    <section class="tab-content" id="tab-settings" role="tabpanel">
+      <div class="settings-grid">
+        <!-- Configuration Card -->
+        <div class="glass-card settings-card">
+          <div class="card-header">
+            <h2>Parâmetros do Ambiente (.env)</h2>
+            <button class="action-btn secondary small" id="btn-reload-config">🔄 Recarregar</button>
+          </div>
+
+          <form id="settings-form" class="settings-form-layout">
+            <div class="form-group">
+              <label for="cfg-base-url">OpenAI / OpenRouter Base URL:</label>
+              <input type="text" id="cfg-base-url" placeholder="https://openrouter.ai/api/v1">
+              <span class="field-hint">Para OpenRouter: https://openrouter.ai/api/v1</span>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfg-chat-model">Modelo de Chat (LLM):</label>
+                <input type="text" id="cfg-chat-model" placeholder="openai/gpt-4o-mini">
+              </div>
+
+              <div class="form-group">
+                <label for="cfg-whisper-model">Modelo de Transcrição (STT):</label>
+                <input type="text" id="cfg-whisper-model" placeholder="openai/whisper-1">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfg-tts-engine">Motor TTS Ativo:</label>
+                <select id="cfg-tts-engine">
+                  <option value="gtts">gTTS (Google TTS pt-BR - Gratuito)</option>
+                  <option value="openai">OpenAI / OpenRouter API</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="cfg-tts-model">Modelo TTS OpenRouter:</label>
+                <input type="text" id="cfg-tts-model" placeholder="hexgrad/kokoro-82m">
+              </div>
+            </div>
+
+            <button type="submit" class="primary-btn" id="btn-save-settings">
+              <span>💾 Salvar no .env</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- Diagnostics Card -->
+        <div class="glass-card diagnostics-card">
+          <div class="card-header">
+            <h2>Diagnóstico do Sistema</h2>
+            <button class="action-btn small" id="btn-run-diagnostics">🔍 Executar Testes</button>
+          </div>
+
+          <div class="diagnostic-list" id="diagnostic-results-container">
+            <div class="loading-state">Clique em "Executar Testes" para verificar todos os componentes.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>SpeechAI Framework • Python 3.15 • OpenRouter & Whisper Integration</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

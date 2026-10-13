@@ -1,43 +1,151 @@
-from faster_whisper import WhisperModel
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
+"""Audio transcription module supporting both OpenAI Whisper API and local faster-whisper."""
 
-# Load environment variables from .env file
-load_dotenv()
+from __future__ import annotations
 
-# Initialize OpenAI client with API key from environment
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+import io
+from pathlib import Path
+from typing import Generator, Optional, Union, Any
 
-# Carregar modelo médio (balance entre velocidade e precisão)
-model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+from src.core.logger import logger
+from src.core.config import config
+from src.core.client import get_openai_client
 
-def openai_whisper_api(audio_file):
-    # Transcribe the audio
-    with open(audio_file, 'rb') as audio_file:
-        user_input = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file
-        ).text
-    return user_input
 
-def local_transcribe_audio(file_path):
+# Cached local whisper model instance (lazy loaded)
+_local_whisper_model = None
 
-    
-    # Transcrever áudio
-    # segments, info = model.transcribe(file_path)
-    # text = " ".join(segment.text for segment in segments)
-    
-    segments, _ = model.transcribe(file_path)
 
+def get_local_whisper_model():
+    """Lazily load faster-whisper model only when requested."""
+    global _local_whisper_model
+    if _local_whisper_model is None:
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError:
+            raise ImportError(
+                "faster-whisper is not installed. Install it with: pip install faster-whisper"
+            )
+        logger.info(f"Loading local Whisper model: {config.local_whisper_model} on CPU...")
+        _local_whisper_model = WhisperModel(
+            config.local_whisper_model,
+            device="cpu",
+            compute_type="int8"
+        )
+    return _local_whisper_model
+
+
+def transcribe_with_openai(
+    audio_source: Union[str, Path, io.BytesIO, bytes],
+    model: Optional[str] = None,
+    language: Optional[str] = None,
+) -> str:
+    """Transcribe audio using OpenAI Whisper API.
+
+    Args:
+        audio_source: File path, BytesIO buffer, or raw bytes.
+        model: Whisper model name (default: whisper-1).
+        language: Optional ISO 639-1 language code (e.g. 'en', 'pt').
+
+    Returns:
+        str: Transcribed text.
+    """
+    client = get_openai_client()
+    model_name = model or config.openai_whisper_model
+
+    file_payload: Any
+    if isinstance(audio_source, (str, Path)):
+        path = Path(audio_source)
+        if not path.exists():
+            raise FileNotFoundError(f"Audio file not found: {path}")
+        with open(path, "rb") as f:
+            kwargs = {"model": model_name, "file": f}
+            if language:
+                kwargs["language"] = language
+            response = client.audio.transcriptions.create(**kwargs)
+            return response.text.strip()
+    elif isinstance(audio_source, io.BytesIO):
+        audio_source.seek(0)
+        file_payload = ("audio.wav", audio_source.read(), "audio/wav")
+    elif isinstance(audio_source, bytes):
+        file_payload = ("audio.wav", audio_source, "audio/wav")
+    else:
+        raise TypeError(f"Unsupported audio source type: {type(audio_source)}")
+
+    kwargs = {"model": model_name, "file": file_payload}
+    if language:
+        kwargs["language"] = language
+
+    response = client.audio.transcriptions.create(**kwargs)
+    return response.text.strip()
+
+
+def transcribe_with_local_whisper(
+    audio_source: Union[str, Path, io.BytesIO],
+) -> Generator[str, None, None]:
+    """Transcribe audio using local faster-whisper, yielding segment texts.
+
+    Args:
+        audio_source: File path or BytesIO buffer.
+
+    Yields:
+        str: Segment text transcription.
+    """
+    model = get_local_whisper_model()
+
+    input_data: Any
+    if isinstance(audio_source, io.BytesIO):
+        audio_source.seek(0)
+        input_data = audio_source
+    else:
+        input_data = str(audio_source)
+
+    segments, _ = model.transcribe(input_data)
     for segment in segments:
-        #print(segment.text, end=" ", flush=True)  # Stream transcription
-        yield(segment.text)
-    # Salvar transcrição
-    # output_path = file_path + ".txt"
-    # with open(output_path, "w") as f:
-    #     f.write(text)
-    
-    # print(f"Transcrição salva em: {output_path}")
-    #return text
+        yield segment.text
 
+
+def transcribe_audio(
+    audio_source: Union[str, Path, io.BytesIO, bytes],
+    engine: Optional[str] = None,
+) -> str:
+    """High-level unified audio transcription function.
+
+    Args:
+        audio_source: Audio file path or BytesIO buffer.
+        engine: 'openai' or 'local'. Defaults to config.stt_engine.
+
+    Returns:
+        str: Complete transcribed text.
+    """
+    selected_engine = (engine or config.stt_engine).lower()
+
+    if selected_engine == "local":
+        try:
+            segments = list(transcribe_with_local_whisper(audio_source))
+            return " ".join(s.strip() for s in segments if s.strip())
+        except ImportError as e:
+            logger.warning(f"Local Whisper unavailable ({e}), falling back to OpenAI Whisper API.")
+
+    # Default to OpenAI
+    return transcribe_with_openai(audio_source)
+
+
+# Backwards compatibility wrappers
+def openai_whisper_api(audio_file: Union[str, Path]) -> str:
+    """Backwards compatible wrapper for OpenAI Whisper API transcription."""
+    return transcribe_with_openai(audio_file)
+
+
+def local_transcribe_audio(file_path: Union[str, Path, io.BytesIO]) -> Generator[str, None, None]:
+    """Backwards compatible wrapper for local transcription."""
+    if config.stt_engine == "local":
+        try:
+            yield from transcribe_with_local_whisper(file_path)
+            return
+        except ImportError:
+            logger.warning("faster-whisper not installed; falling back to OpenAI Whisper API.")
+
+    # Fallback to OpenAI API
+    text = transcribe_with_openai(file_path)
+    if text:
+        yield text

@@ -1,51 +1,64 @@
-from openai import OpenAI
-import pygame
+"""Real-time Text-to-Speech synthesis and playback using OpenAI TTS."""
 
-client = OpenAI()
+from __future__ import annotations
+
+import functools
+import sys
+import time
+from typing import Optional
+
+from src.core.logger import logger
+from src.core.config import config
+from src.core.tts.synthesizer import synthesize_to_bytes
+from src.core.audio.player import player
+
 
 def time_elapsed(func):
+    """Decorator to measure and log function execution latency."""
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        import time
         start_time = time.time()
-        func(*args, **kwargs)
-        end_time = time.time()
-        print(f"Time elapsed: {end_time - start_time} seconds")
+        result = func(*args, **kwargs)
+        duration = time.time() - start_time
+        logger.info(f"[{func.__name__}] Time elapsed: {duration:.3f} seconds")
+        return result
     return wrapper
 
+
 @time_elapsed
-def speak(text):
+def speak(
+    text: str,
+    voice: Optional[str] = None,
+    model: Optional[str] = None,
+) -> bool:
+    """Synthesize text using OpenAI TTS and immediately play the result.
 
-    temp_mp3 = "output.mp3"
-        
-    response = client.audio.speech.create(
-        model="tts-1",
-        voice="nova",
-        input=text
-    )
-    
-    response.stream_to_file(temp_mp3)
-     
+    Args:
+        text: Text string to speak.
+        voice: Voice name (nova, alloy, echo, fable, onyx, shimmer).
+        model: TTS model (tts-1 or tts-1-hd).
 
-    # Initialize pygame mixer
-    pygame.mixer.init()
+    Returns:
+        bool: True if synthesized and played successfully, False otherwise.
+    """
+    if not text or not text.strip():
+        return False
 
-    # Load the audio file
-    pygame.mixer.music.load("output.mp3")
+    if not config.has_openai_key:
+        logger.error("OPENAI_API_KEY is not configured in .env.")
+        return False
 
-    # Play the audio
-    pygame.mixer.music.play()
+    voice_name = voice or config.openai_tts_voice
+    logger.info(f"Speaking with OpenAI TTS ({voice_name}): '{text}'")
 
-    print("Playing audio...")
+    audio_buffer = synthesize_to_bytes(text, engine="openai")
+    if not audio_buffer:
+        logger.error("Failed to generate audio from OpenAI TTS.")
+        return False
 
-    # Keep the script running until the audio finishes playing
-    while pygame.mixer.music.get_busy():
-        pygame.time.Clock().tick(10)
+    return player.play(audio_buffer, block=True)
 
-    print("Audio playback finished.")
-    
-    # Clean up
-    #os.remove(mp3_filename)
 
 if __name__ == "__main__":
-    # Example usage
-    speak("I am your english teacher nice to meet you?")
+    sample_text = sys.argv[1] if len(sys.argv) > 1 else "Hello! This is a test of OpenAI Text-to-Speech."
+    speak(sample_text)

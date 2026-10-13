@@ -1,8 +1,11 @@
-openai==1.3.0
-pygame==2.5.2
-gTTS==2.4.0
-playsound==1.3.0
-sounddevice==0.4.6
-wave==0.0.2
-requests==2.31.0
-python-dotenv==1.0.0
+# SpeechAI Core Dependencies
+openai>=1.3.0
+gTTS>=2.4.0
+pygame-ce>=2.5.0
+sounddevice>=0.4.6
+requests>=2.31.0
+python-dotenv>=1.0.0
+numpy>=1.24.0
+
+# Optional STT local offline engine (install if you want local Whisper on CPU/GPU):
+# faster-whisper>=1.0.0

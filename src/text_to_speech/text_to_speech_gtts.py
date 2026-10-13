@@ -1,32 +1,24 @@
-from gtts import gTTS
-from playsound import playsound
-import os
-import tempfile
-def time_elapsed(func):
-    def wrapper(*args, **kwargs):
-        import time
-        start_time = time.time()
-        func(*args, **kwargs)
-        end_time = time.time()
-        print(f"Time elapsed: {end_time - start_time} seconds")
-    return wrapper
+"""Google Text-to-Speech (gTTS) module and CLI script."""
 
-@time_elapsed
-def speak(text):
-    # Create a temporary file
-    with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as fp:
-        temp_filename = fp.name
-        
-    # Convert text to speech
-    tts = gTTS(text=text, lang='en')
-    tts.save(temp_filename)
-    
-    # Play the audio
-    playsound(temp_filename)
-    
-    # Clean up
-    os.remove(temp_filename)
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Optional, Union
+
+from src.core.tts.synthesizer import synthesize_with_gtts
+from src.realtime_processing.realtime_gtts import speak, time_elapsed
+
+
+def save_speech(
+    text: str,
+    output_path: Union[str, Path] = "output.mp3",
+    lang: Optional[str] = None,
+) -> Optional[Path]:
+    """Synthesize text and save to the specified file path."""
+    return synthesize_with_gtts(text, output_file=output_path, lang=lang)
+
 
 if __name__ == "__main__":
-    # Example usage
-    speak("I am your english teacher nice to meet you?")
+    sample_text = sys.argv[1] if len(sys.argv) > 1 else "Olá, este é um exemplo com Google TTS."
+    speak(sample_text)

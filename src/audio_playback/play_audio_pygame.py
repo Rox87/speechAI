@@ -1,18 +1,22 @@
-import pygame
+"""Audio playback script using Pygame mixer."""
 
-# Initialize pygame mixer
-pygame.mixer.init()
+from __future__ import annotations
 
-# Load the audio file
-pygame.mixer.music.load("output.mp3")
+import sys
+from pathlib import Path
+from src.core.logger import logger
+from src.core.audio.player import play_with_pygame
 
-# Play the audio
-pygame.mixer.music.play()
 
-print("Playing audio...")
+def play(file_path: str = "output.mp3") -> bool:
+    """Play an audio file using Pygame mixer."""
+    path = Path(file_path)
+    if not path.exists():
+        logger.error(f"Audio file '{file_path}' does not exist.")
+        return False
+    return play_with_pygame(str(path))
 
-# Keep the script running until the audio finishes playing
-while pygame.mixer.music.get_busy():
-    pygame.time.Clock().tick(10)
 
-print("Audio playback finished.")
+if __name__ == "__main__":
+    target = sys.argv[1] if len(sys.argv) > 1 else "output.mp3"
+    play(target)

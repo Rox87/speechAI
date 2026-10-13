@@ -1,64 +1,61 @@
-import sounddevice as sd
-import numpy as np
-import io
-import requests
-import wave
-import os
-# OpenAI API endpoint and API key
-API_URL = "https://api.openai.com/v1/audio/transcriptions"
-API_KEY = os.environ.get("OPENAI_API_KEY")
+"""Real-time speech-to-text transcription module."""
 
-# Function to record audio and process in chunks
-def record_and_transcribe(chunk_duration=5, samplerate=44100, channels=1):
-    print("Starting real-time audio processing...")
-    
-    def send_to_openai(audio_data):
-        """Send audio data to OpenAI API for transcription."""
-        # Save audio data to an in-memory WAV file
-        audio_buffer = io.BytesIO()
-        with wave.open(audio_buffer, 'wb') as wf:
-            wf.setnchannels(channels)
-            wf.setsampwidth(2)  # Sample width for int16
-            wf.setframerate(samplerate)
-            wf.writeframes(audio_data.tobytes())
-        audio_buffer.seek(0)
-        
-        # Prepare the request
-        files = {
-            "file": ("audio.wav", audio_buffer, "audio/wav"),
-        }
-        headers = {
-            "Authorization": f"Bearer {API_KEY}",
-        }
-        data = {
-            "model": "whisper-1",  # Whisper model name (adjust if needed)
-        }
+from __future__ import annotations
 
-        # Send request to OpenAI API
-        response = requests.post(API_URL, headers=headers, files=files, data=data)
-        if response.status_code == 200:
-            return response.json().get("text", "")
-        else:
-            print(f"Error: {response.status_code}, {response.text}")
-            return None
+import time
+from typing import Optional, Callable
+from src.core.logger import logger
+from src.core.config import config
+from src.core.audio.recorder import record_audio_to_bytes
+from src.core.audio.audio_transcriber import transcribe_audio
 
+
+def record_and_transcribe_loop(
+    chunk_duration: Optional[float] = None,
+    on_transcript: Optional[Callable[[str], None]] = None,
+    max_iterations: Optional[int] = None,
+) -> None:
+    """Continuously record audio chunks and transcribe in real-time.
+
+    Args:
+        chunk_duration: Duration of each chunk in seconds. Defaults to config.record_duration.
+        on_transcript: Optional callback function receiving transcribed text.
+        max_iterations: Optional maximum loop cycles before stopping.
+    """
+    duration = chunk_duration or config.record_duration
+    logger.info(f"Starting real-time audio transcription ({duration}s chunks)... Press Ctrl+C to stop.")
+
+    iteration = 0
     try:
-        while True:
-            print("Recording...")
-            # Record audio in chunks
-            audio_data = sd.rec(int(chunk_duration * samplerate), samplerate=samplerate, channels=channels, dtype='int16')
-            sd.wait()  # Wait for the recording to complete
-            print("Processing...")
-            
-            # Transcribe the audio using OpenAI API
-            transcription = send_to_openai(audio_data)
-            if transcription:
-                print(f"Transcription: {transcription}")
-            else:
-                print("Failed to transcribe audio.")
-    
-    except KeyboardInterrupt:
-        print("Stopped real-time audio processing.")
+        while max_iterations is None or iteration < max_iterations:
+            iteration += 1
+            start_t = time.time()
 
-# Start processing
-record_and_transcribe()
+            # Record chunk
+            audio_buffer = record_audio_to_bytes(duration=duration)
+
+            # Transcribe
+            text = transcribe_audio(audio_buffer, engine=config.stt_engine)
+            elapsed = time.time() - start_t
+
+            if text and text.strip():
+                logger.info(f"[{elapsed:.2f}s] Transcription: {text}")
+                if on_transcript:
+                    on_transcript(text)
+            else:
+                logger.debug(f"[{elapsed:.2f}s] No speech detected in chunk.")
+
+    except KeyboardInterrupt:
+        logger.info("\nReal-time transcription stopped by user.")
+    except Exception as e:
+        logger.error(f"Error in transcription loop: {e}")
+
+
+# Backwards compatibility function
+def record_and_transcribe(chunk_duration: float = 5.0) -> None:
+    """Legacy wrapper for real-time transcription."""
+    record_and_transcribe_loop(chunk_duration=chunk_duration)
+
+
+if __name__ == "__main__":
+    record_and_transcribe_loop()
